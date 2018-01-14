@@ -176,7 +176,7 @@ var showLandsat7ForYearTop = function(year){
 }
 
 var showAsterForYearBottom = function( year){
-  showAsterForYear( landsat5Map2, year);
+  showAsterForYear( AsterMap2, year);
 }
 
 var showAsterForYear = function(map, year){
@@ -224,7 +224,7 @@ var addAsterSlider = function(mapWithSlider , selectedYear ){
   // Create a label and slider.
   var label = ui.Label('Aster False Color');
  
-  var onChangeFunction = showLandsat5ForYearBottom;
+  var onChangeFunction = showAsterForYearBottom;
     
   var slider = ui.Slider({
     min: 2000,
