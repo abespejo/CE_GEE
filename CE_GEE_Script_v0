@@ -12,7 +12,7 @@ var endTime = '${todayDate}';
 
 
 var visualizationLandsat = {min: 0, max: 0.2, gamma: [1, 1, 1]};
-var visualizationLandsat5 = {bands: 'nir, swir1, red', min: 0, max: '40, 10, 256', gamma: 1};
+var visualizationAster = {bands: 'nir, swir1, red', min: 0, max: '40, 10, 256', gamma: 1};
 var visualizationSentinel = {min: 0, max: 4000, gamma: [1, 1, 1]};
 var visualizationLandsat8 = {min: 0, max: 0.1, gamma: [1, 1, 1]};
 
@@ -80,7 +80,7 @@ print(landsat7MonthlyTimeSeries);
 var sharpenedLandsat8_false = panSharpen('LANDSAT/LC8_L1T_ANNUAL_GREENEST_TOA' , ['B5', 'B6', 'B4'], ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8','B10', 'B11'], '${oneYearAgoDate}', '${todayDate}');
 var sharpenedLandsat8_true = panSharpen('LANDSAT/LC8_L1T_ANNUAL_GREENEST_TOA' , ['B4', 'B3', 'B2'], ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8','B10', 'B11'], '${oneYearAgoDate}', '${todayDate}');
 var collection = ee.ImageCollection( 'ASTER/AST_L1T_003' ).filterBounds(plot).filterDate( '2005'+startYear , '2005' + endYear  ).filter(ee.Filter.listContains('ORIGINAL_BANDS_PRESENT', 'B3N')).map(normalize);
-var sharpenedLandsat5_1990 = collection.qualityMosaic('cloudCover');
+var sharpenedAster = collection.qualityMosaic('cloudCover');
 var sharpenedLandsat7_2008 = panSharpen('LANDSAT/LE7_L1T_ANNUAL_GREENEST_TOA' , ['B4', 'B5', 'B3'], ['B1', 'B2', 'B3', 'B4', 'B5', 'B6_VCID_1' , 'B6_VCID_2' , 'B7', 'B8'], '2008'+startYear, '2008' + endYear);
 var sentinelVV = ee.ImageCollection('COPERNICUS/S2').filterDate('${oneYearAgoDate}', '${todayDate}').filterBounds(plot).filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', 30) ).map(cloudMask);
 var sentinelImage = sentinelVV.median().select(['B4','B3','B2','B8', 'B11']);
@@ -112,7 +112,6 @@ function normalize(image) {
   return image
     .addBands(cloudCover)
 }
-
 ////END
 
 function addCheckBox( map, visualization, images, name){
@@ -161,9 +160,9 @@ function createL7SliderMap( image, visualization, year, name){
     return addPlotToMap(map);
 }
 
-function createL5SliderMap( image, visualization, year, name){
+function createAsterSliderMap( image, visualization, year, name){
     var map = ui.Map();
-    addL5Slider(map, year);
+    addAsterSlider(map, year);
     map.addLayer(image, visualization, name);
     // Add the plot polygon to the map
     return addPlotToMap(map);
@@ -176,14 +175,14 @@ var showLandsat7ForYearTop = function(year){
   showLandsat7ForYear( landsat7Map1, year);
 }
 
-var showLandsat5ForYearBottom = function( year){
-  showLandsat5ForYear( landsat5Map2, year);
+var showAsterForYearBottom = function( year){
+  showAsterForYear( landsat5Map2, year);
 }
 
-var showLandsat5ForYear = function(map, year){
-  var landsat = ee.ImageCollection( 'ASTER/AST_L1T_003' ).filterBounds(plot).filterDate( year + startYear, year + endYear ).filter(ee.Filter.listContains('ORIGINAL_BANDS_PRESENT', 'B3N')).map(normalize);
-  landsat = landsat.qualityMosaic('cloudCover').visualize({bands: ['nir', 'swir1', 'red'], min: 0, max: [40,10,256], gamma: [1, 1, 1]});
-  map.layers().set( 0, landsat);
+var showAsterForYear = function(map, year){
+  var Aster = ee.ImageCollection( 'ASTER/AST_L1T_003' ).filterBounds(plot).filterDate( year + startYear, year + endYear ).filter(ee.Filter.listContains('ORIGINAL_BANDS_PRESENT', 'B3N')).map(normalize);
+  Aster = Aster.qualityMosaic('cloudCover').visualize({bands: ['nir', 'swir1', 'red'], min: 0, max: [40,10,256], gamma: [1, 1, 1]});
+  map.layers().set( 0, Aster);
 }
 
 var showLandsat7ForYear = function(map, year){
@@ -221,7 +220,7 @@ var addL7Slider = function(mapWithSlider , selectedYear ){
   slider.setValue(selectedYear,false);
 }
 
-var addL5Slider = function(mapWithSlider , selectedYear ){
+var addAsterSlider = function(mapWithSlider , selectedYear ){
   // Create a label and slider.
   var label = ui.Label('Aster False Color');
  
@@ -252,18 +251,18 @@ var addL5Slider = function(mapWithSlider , selectedYear ){
 var sentinelMap = createCheckboxMap( [sentinelFalseColor, sentinelTrueColor], visualizationSentinel , "S2 -Nov. 2016 a Nov. 2017- False/Natural color");
 var landsat8Map = createCheckboxMap([sharpenedLandsat8_false, sharpenedLandsat8_true], visualizationLandsat8, "L8 -Nov. 2016 a Nov. 2017- False/Natural color");
 var landsat7Map1 = createL7SliderMap(sharpenedLandsat7_2008, visualizationLandsat, 2008, "L7 False color");
-var landsat5Map2 = createL5SliderMap(sharpenedLandsat5_1990, visualizationLandsat5, 2005, "Aster False color");
+var AsterMap2 = createAsterSliderMap(sharpenedAster, visualizationAster, 2005, "Aster False color");
 
 maps.push(sentinelMap);
 maps.push(landsat8Map);
 maps.push(landsat7Map1);
-maps.push(landsat5Map2);
+maps.push(AsterMap2);
 
 var linker = ui.Map.Linker(maps);
 // Create a grid of maps.
 
 var panelLeft =  ui.Panel([sentinelMap, landsat8Map], null, {stretch: 'both'});
-var panelRight =  ui.Panel([landsat7Map1, landsat5Map2], null, {stretch: 'both'});
+var panelRight =  ui.Panel([landsat7Map1, AsterMap2], null, {stretch: 'both'});
 
 var mapGrid = ui.Panel([ panelLeft,panelRight],
   ui.Panel.Layout.Flow('horizontal'), {stretch: 'both'}
