@@ -12,7 +12,7 @@ var endTime = '${todayDate}';
 
 
 var visualizationLandsat = {min: 0, max: 0.2, gamma: [1, 1, 1]};
-var visualizationLandsat5 = {min: 0, max: 255, gamma: [1.3, 1.3, 1.3]};
+var visualizationLandsat5 = {bands: 'nir, swir1, red', min: 0, max: '40, 10, 256', gamma: 1};
 var visualizationSentinel = {min: 0, max: 4000, gamma: [1, 1, 1]};
 var visualizationLandsat8 = {min: 0, max: 0.1, gamma: [1, 1, 1]};
 
@@ -79,7 +79,8 @@ print(landsat7MonthlyTimeSeries);
 
 var sharpenedLandsat8_false = panSharpen('LANDSAT/LC8_L1T_ANNUAL_GREENEST_TOA' , ['B5', 'B6', 'B4'], ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8','B10', 'B11'], '${oneYearAgoDate}', '${todayDate}');
 var sharpenedLandsat8_true = panSharpen('LANDSAT/LC8_L1T_ANNUAL_GREENEST_TOA' , ['B4', 'B3', 'B2'], ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8','B10', 'B11'], '${oneYearAgoDate}', '${todayDate}');
-var sharpenedLandsat5_1990 = (ee.Image) ( ee.ImageCollection( "LANDSAT/LT5_L1T_ANNUAL_GREENEST_TOA" ).select(['B4', 'B5', 'B3']).filterBounds(plot).filterDate( '1990'+startYear , '1990' + endYear  ).first() );
+var collection = ee.ImageCollection( 'ASTER/AST_L1T_003' ).filterBounds(plot).filterDate( '2005'+startYear , '2005' + endYear  ).filter(ee.Filter.listContains('ORIGINAL_BANDS_PRESENT', 'B3N')).map(normalize);
+var sharpenedLandsat5_1990 = collection.qualityMosaic('cloudCover');
 var sharpenedLandsat7_2008 = panSharpen('LANDSAT/LE7_L1T_ANNUAL_GREENEST_TOA' , ['B4', 'B5', 'B3'], ['B1', 'B2', 'B3', 'B4', 'B5', 'B6_VCID_1' , 'B6_VCID_2' , 'B7', 'B8'], '2008'+startYear, '2008' + endYear);
 var sentinelVV = ee.ImageCollection('COPERNICUS/S2').filterDate('${oneYearAgoDate}', '${todayDate}').filterBounds(plot).filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', 30) ).map(cloudMask);
 var sentinelImage = sentinelVV.median().select(['B4','B3','B2','B8', 'B11']);
@@ -89,6 +90,30 @@ sentinelImage = sharpenSentinel( sentinelImage);
 var sentinelFalseColor = sentinelImage.select(['B8','B11','B4']);
 var sentinelTrueColor = sentinelImage.select(['B4','B3','B2']);
 
+///New Aster normalize function
+function normalize(image) {
+  var norm = function(band) {
+    return ee.Image(ee.Number(image.get('GAIN_COEFFICIENT_' + band))).float()
+      .rename(band)
+  }
+  var coef = ee.Image.cat(
+    [norm('B01'), norm('B02'), norm('B04'), norm('B05'), norm('B06'), norm('B07'), 
+    norm('B08'), norm('B09'), norm('B10'),  norm('B11'), norm('B12'), norm('B13'), 
+    norm('B14'), norm('B3N')]
+  )
+  
+  var cloudCover = ee.Image(ee.Number(image.get('CLOUDCOVER')))
+    .float().multiply(-1).add(100).rename('cloudCover')
+  image = image.subtract(1).multiply(coef)
+  image = image.select(
+    ['B01', 'B02', 'B3N', 'B04', 'B05', 'B10'],
+    ['green', 'red', 'nir', 'swir1', 'swir2', 'thermal'])
+    
+  return image
+    .addBands(cloudCover)
+}
+
+////END
 
 function addCheckBox( map, visualization, images, name){
   
@@ -109,8 +134,6 @@ function addCheckBox( map, visualization, images, name){
     onChange: onChangeFunction,
     style: {stretch: 'horizontal'}
   });
-  
-
   map.add(checkBox);
 }
 
@@ -158,8 +181,8 @@ var showLandsat5ForYearBottom = function( year){
 }
 
 var showLandsat5ForYear = function(map, year){
-var landsat = (ee.Image) ( ee.ImageCollection( "LANDSAT/LT5_L1T_ANNUAL_GREENEST_TOA" ).select(['B4', 'B5', 'B3']).filterBounds(plot).filterDate( year + startYear, year + endYear ).first() );
-landsat = landsat.visualize(visualizationLandsat5 );
+  var landsat = ee.ImageCollection( 'ASTER/AST_L1T_003' ).filterBounds(plot).filterDate( year + startYear, year + endYear ).filter(ee.Filter.listContains('ORIGINAL_BANDS_PRESENT', 'B3N')).map(normalize);
+  landsat = landsat.qualityMosaic('cloudCover').visualize({bands: ['nir', 'swir1', 'red'], min: 0, max: [40,10,256], gamma: [1, 1, 1]});
   map.layers().set( 0, landsat);
 }
 
@@ -205,8 +228,8 @@ var addL5Slider = function(mapWithSlider , selectedYear ){
   var onChangeFunction = showLandsat5ForYearBottom;
     
   var slider = ui.Slider({
-    min: 1990,
-    max: 2000,
+    min: 2000,
+    max: 2012,
     step: 1,
     onChange: onChangeFunction,
     style: {stretch: 'horizontal'}
@@ -229,7 +252,7 @@ var addL5Slider = function(mapWithSlider , selectedYear ){
 var sentinelMap = createCheckboxMap( [sentinelFalseColor, sentinelTrueColor], visualizationSentinel , "S2 -Nov. 2016 a Nov. 2017- False/Natural color");
 var landsat8Map = createCheckboxMap([sharpenedLandsat8_false, sharpenedLandsat8_true], visualizationLandsat8, "L8 -Nov. 2016 a Nov. 2017- False/Natural color");
 var landsat7Map1 = createL7SliderMap(sharpenedLandsat7_2008, visualizationLandsat, 2008, "L7 False color");
-var landsat5Map2 = createL5SliderMap(sharpenedLandsat5_1990, visualizationLandsat5, 1990, "L5 False color");
+var landsat5Map2 = createL5SliderMap(sharpenedLandsat5_1990, visualizationLandsat5, 2005, "Aster False color");
 
 maps.push(sentinelMap);
 maps.push(landsat8Map);
