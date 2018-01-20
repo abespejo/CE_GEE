@@ -114,43 +114,6 @@ function normalize(image) {
 }
 ////END
 
-function addCheckBox( map, visualization, images, name){
-  
-  var onChangeFunction = function( checked ){
-      var image;
-      if( checked ){
-       image = images[1];
-      }else{
-        image = images[0];
-      }
-      
-      image = image.visualize(visualization );
-      map.layers().set( 0, image);
-  };
-    
-  var checkBox = ui.Checkbox({
-    label : name,
-    onChange: onChangeFunction,
-    style: {stretch: 'horizontal'}
-  });
-  map.add(checkBox);
-}
-
-function addPlotToMap(map){
-    map.addLayer(plot, {}, "Plot");
-    map.centerObject( plot , 15 );
-    map.setControlVisibility(false);
-    return map;
-}
-
-
-function createCheckboxMap( images, visualization, name){
-    var map = ui.Map();
-    addCheckBox( map, visualization, images, name );
-    map.addLayer(images[0], visualization, name);
-    // Add the plot polygon to the map
-    return addPlotToMap(map);
-}
 
 function createL7SliderMap( image, visualization, year, name){
     var map = ui.Map();
@@ -168,15 +131,39 @@ function createAsterSliderMap( image, visualization, year, name){
     return addPlotToMap(map);
 }
 
+function createS2SliderMap( image, visualization, year, name){
+    var map = ui.Map();
+    addS2Slider(map, year);
+    map.addLayer(image, visualization, name);
+    // Add the plot polygon to the map
+    return addPlotToMap(map);
+}
+
+function createL8SliderMap( image, visualization, year, name){
+    var map = ui.Map();
+    addL8Slider(map, year);
+    map.addLayer(image, visualization, name);
+    // Add the plot polygon to the map
+    return addPlotToMap(map);
+}
+
 // Create a map for each visualization option.
 var maps = [];
 
 var showLandsat7ForYearTop = function(year){
-  showLandsat7ForYear( landsat7Map1, year);
+  showLandsat7ForYear( landsat7Map, year);
 }
 
-var showAsterForYearBottom = function( year){
-  showAsterForYear( AsterMap2, year);
+var showAsterForYearBottom = function(year){
+  showAsterForYear( AsterMap, year);
+}
+
+var showS2ForYearTop = function(year){
+  showS2ForYear( S2Map, year);
+}
+
+var showLandsat8ForYearBottom = function(year){
+  showLandsat8ForYear( landsat8Map, year);
 }
 
 var showAsterForYear = function(map, year){
@@ -191,13 +178,24 @@ var showLandsat7ForYear = function(map, year){
   map.layers().set( 0, landsat);
 }
 
+var showLandsat8ForYear = function(map, year){
+  var landsat = panSharpen('LANDSAT/LC8_L1T_ANNUAL_GREENEST_TOA' , ['B5', 'B6', 'B4'], ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8','B10', 'B11'],  year + startYear, year + endYear  );
+  landsat = landsat.visualize(visualizationLandsat8 );
+  map.layers().set( 0, landsat);
+}
+
+var showS2ForYear = function(map, year){
+  var sentinelVV = ee.ImageCollection('COPERNICUS/S2').filterDate(year + startYear, year + endYear).filterBounds(plot).filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', 30) ).map(cloudMask);
+  var sentinelImage = sentinelVV.median().select(['B8','B11','B4']);
+  sentinelImage = sharpenSentinel( sentinelImage);
+  map.layers().set( 0, sentinelImage);
+}
+
+
 var addL7Slider = function(mapWithSlider , selectedYear ){
   // Create a label and slider.
   var label = ui.Label('Landsat 7 False Color');
- 
   var onChangeFunction = showLandsat7ForYearTop;
-
-  
   var slider = ui.Slider({
     min: 2000,
     max: 2017,
@@ -223,9 +221,7 @@ var addL7Slider = function(mapWithSlider , selectedYear ){
 var addAsterSlider = function(mapWithSlider , selectedYear ){
   // Create a label and slider.
   var label = ui.Label('Aster False Color');
- 
   var onChangeFunction = showAsterForYearBottom;
-    
   var slider = ui.Slider({
     min: 2000,
     max: 2012,
@@ -248,21 +244,73 @@ var addAsterSlider = function(mapWithSlider , selectedYear ){
   slider.setValue(selectedYear,false);
 }
 
-var sentinelMap = createCheckboxMap( [sentinelFalseColor, sentinelTrueColor], visualizationSentinel , "S2 -Nov. 2016 a Nov. 2017- False/Natural color");
-var landsat8Map = createCheckboxMap([sharpenedLandsat8_false, sharpenedLandsat8_true], visualizationLandsat8, "L8 -Nov. 2016 a Nov. 2017- False/Natural color");
-var landsat7Map1 = createL7SliderMap(sharpenedLandsat7_2008, visualizationLandsat, 2008, "L7 False color");
+var addL8Slider = function(mapWithSlider , selectedYear ){
+  // Create a label and slider.
+  var label = ui.Label('Landsat 8 False Color');
+  var onChangeFunction = showLandsat8ForYearBottom;
+  var slider = ui.Slider({
+    min: 2013,
+    max: 2017,
+    step: 1,
+    onChange: onChangeFunction,
+    style: {stretch: 'horizontal'}
+  });
+  
+  // Create a panel that contains both the slider and the label.
+  var panelSlider = ui.Panel({
+    widgets: [label, slider],
+    layout: ui.Panel.Layout.flow('vertical'),
+    style: {
+      position: 'top-center',
+      padding: '7px'
+    }
+  });
+ 
+  mapWithSlider.add(panelSlider);
+  slider.setValue(selectedYear,false);
+}
+
+var addS2Slider = function(mapWithSlider , selectedYear ){
+  // Create a label and slider.
+  var label = ui.Label('Sentinel False Color');
+  var onChangeFunction = showS2ForYearTop;
+  var slider = ui.Slider({
+    min: 2015,
+    max: 2017,
+    step: 1,
+    onChange: onChangeFunction,
+    style: {stretch: 'horizontal'}
+  });
+  
+  // Create a panel that contains both the slider and the label.
+  var panelSlider = ui.Panel({
+    widgets: [label, slider],
+    layout: ui.Panel.Layout.flow('vertical'),
+    style: {
+      position: 'top-center',
+      padding: '7px'
+    }
+  });
+ 
+  mapWithSlider.add(panelSlider);
+  slider.setValue(selectedYear,false);
+}
+
+var sentinelMap = createS2SliderMap( sentinelFalseColor, visualizationSentinel , 2017, "S2 False Color");
+var landsat8Map = createL8SliderMap(sharpenedLandsat8_false, visualizationLandsat8, 2017, "L7 False color");
+var landsat7Map = createL7SliderMap(sharpenedLandsat7_2008, visualizationLandsat, 2008, "L7 False color");
 var AsterMap2 = createAsterSliderMap(sharpenedAster, visualizationAster, 2005, "Aster False color");
 
 maps.push(sentinelMap);
 maps.push(landsat8Map);
-maps.push(landsat7Map1);
+maps.push(landsat7Map);
 maps.push(AsterMap2);
 
 var linker = ui.Map.Linker(maps);
 // Create a grid of maps.
 
 var panelLeft =  ui.Panel([sentinelMap, landsat8Map], null, {stretch: 'both'});
-var panelRight =  ui.Panel([landsat7Map1, AsterMap2], null, {stretch: 'both'});
+var panelRight =  ui.Panel([landsat7Map, AsterMap], null, {stretch: 'both'});
 
 var mapGrid = ui.Panel([ panelLeft,panelRight],
   ui.Panel.Layout.Flow('horizontal'), {stretch: 'both'}
