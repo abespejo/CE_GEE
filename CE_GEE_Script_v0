@@ -12,7 +12,7 @@ var endTime = '${todayDate}';
 
 
 var visualizationLandsat = {min: 0, max: 0.2, gamma: [0.8, 0.8, 1]};
-var visualizationAster = {bands: 'nir, swir1, red', min: 0, max: '30, 50, 200', gamma: [0.8, 0.8, 1]};
+var visualizationAster = {bands: ['nir, swir1, red'], min: 0, max: [30, 50, 200], gamma: [0.8, 0.8, 1]};
 var visualizationSentinel = {min: 0, max: [4000, 4000, 4000], gamma: [1, 1, 1]};
 var visualizationLandsat8 = {min: 0, max: 0.1, gamma: [1, 1, 1]};
 
