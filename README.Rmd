@@ -11,7 +11,7 @@ output: html_document
 This repository contais JavaScript scripts to be run within Google Earth Engine and launched by Collect Earth. The new capabilities that have been included are:
 1. 
 
-##Installation
+## Installation
 
 In order to install it within Collect Earth:
 1. Download the CE_GEE_Script_v0 file
