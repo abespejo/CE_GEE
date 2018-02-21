@@ -1,0 +1,384 @@
+// Script automatically produced by Collect Earth for the plot that has been clicked on Google Earht. See bottom of the script for more info on customization.
+// This script will show graphs of NDVI, EVI and NDWI mean-values for the pixels contained within the plot.
+
+// The date that is used as the start of the chart ( if the dataset is available )
+// You can change the start date manually and hit the button "Run""again to reload the charts using the different time series
+var startTime = '2000-01-01';
+
+// The last date for which the chart is generated. Should be today's date
+var endTime = '${todayDate}';
+
+//Set up calculations for % of images with NDVI above a threshold
+
+
+var visualizationLandsat = {min: 0, max: [0.2,0.2,0.2], gamma: [1, 1, 1]};
+var visualizationAster = {bands: ['nir', 'swir1', 'red'], min: 0, max: [30, 50, 200], gamma: [0.8, 0.8, 1]};
+var visualizationSentinel = {min: 0, max: [4000, 4000, 4000], gamma: [1, 0.1, 1]};
+var visualizationLandsat8 = {min: 0, max: [0.1, 0.1, 0.1], gamma: [1, 1, 1]};
+
+
+var startYear = "-01-01"; 
+var endYear = "-12-31";
+
+// DO NOT EDIT THIS BLOCK!! ------
+// x The polygon that describes the plot.
+var plot =  ee.Geometry.MultiLineString([
+		<#list placemark.multiShape as shp>
+		ee.Geometry.LineString([
+		 // The placemark variable has an array called shape that contains the locations of the corners of the polygon
+		 <#list shp as coord>
+		 [${coord.longitude}, ${coord.latitude}],
+		 </#list>
+		]),
+		</#list>
+		]
+);
+
+// UNTIL HERE ---------------
+
+// Load the MODIS  Vegetation Index composite. Select the NDVI band. Resolution of the pixels is 250 meters.
+var modisNoaaNdvi = ee.ImageCollection('MODIS/MOD13Q1').filterDate(startTime, endTime).select('NDVI');
+
+var addFire = function(i){
+ var image = ee.Image(i);
+ var startModisRange = image.get("system:time_start");
+ var endModisRange = image.get("system:time_end"); 
+ var fireValue = ee.ImageCollection('FIRMS').filterDate(startModisRange, endModisRange).select('T21').mean();
+ var fireValueImage = ee.Image( fireValue );
+ var concat = image.addBands( fireValueImage );
+ return concat;
+}
+modisNoaaNdvi = modisNoaaNdvi.map( addFire );
+var modisNoaaTimeSeries = Chart.image.series(modisNoaaNdvi, plot, ee.Reducer.mean(), 30);
+modisNoaaTimeSeries = modisNoaaTimeSeries
+.setOptions({  
+		title: 'MODIS NDVI 16-Day + FIRMS Fire alerts',
+		hAxis: {title: 'Date',gridlines: {count: 10,}},
+		vAxis: {title: 'NDVI',viewWindowMode: 'explicit', viewWindow: {max: 10000,min: -2500,},gridlines: {count: 5,}}
+	});
+
+// Show the MODIS NDVI chart on the console
+print(modisNoaaTimeSeries);
+
+
+var landsat7MonthlyNdvi = ee.ImageCollection('LANDSAT/LE7_L1T_32DAY_NDVI').filterDate(startTime, endTime).select('NDVI');
+
+var landsat7MonthlyTimeSeries = ui.Chart.image.series(landsat7MonthlyNdvi, plot, ee.Reducer.mean(), 30);
+
+landsat7MonthlyTimeSeries = landsat7MonthlyTimeSeries
+	.setOptions({
+		title: 'Landsat 7 Monthly NDVI Composite',
+		hAxis: {title: 'Month'},
+		vAxis: {title: 'NDVI',viewWindowMode: 'explicit', viewWindow: {max: 1,min: -0.25,},gridlines: {count: 5,}}
+	});
+
+print(landsat7MonthlyTimeSeries);
+
+//Array sorting is useful for obtaining custom quality mosaics which involve reducing a subset of image bands according to the values in a different band. The following example sorts by a cloud index, then gets the mean of the least cloudy subset of images in the collection:
+
+
+var sharpenedLandsat8_false = panSharpen('LANDSAT/LC8_L1T_ANNUAL_GREENEST_TOA' , ['B5', 'B6', 'B4'], ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8','B10', 'B11'], '2017'+startYear, '2017' + endYear);
+var collection = ee.ImageCollection( 'ASTER/AST_L1T_003' ).filterBounds(plot).filterDate( '2005'+startYear , '2005' + endYear  ).filter(ee.Filter.listContains('ORIGINAL_BANDS_PRESENT', 'B3N')).map(normalize);
+var sharpenedAster = collection.qualityMosaic('cloudCover');
+var sharpenedLandsat7_2008 = panSharpen('LANDSAT/LE7_L1T_ANNUAL_GREENEST_TOA' , ['B4', 'B5', 'B3'], ['B1', 'B2', 'B3', 'B4', 'B5', 'B6_VCID_1' , 'B6_VCID_2' , 'B7', 'B8'], '2005'+startYear, '2005' + endYear);
+var sentinelVV = ee.ImageCollection('COPERNICUS/S2').filterDate('2017'+startYear , '2017' + endYear ).filterBounds(plot).filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', 30) ).map(cloudMask);
+var sentinelImage = sentinelVV.median().select(['B8','B11','B4']);
+sentinelImage = sharpenSentinel( sentinelImage);
+
+
+///New Aster normalize function
+function normalize(image) {
+  var norm = function(band) {
+    return ee.Image(ee.Number(image.get('GAIN_COEFFICIENT_' + band))).float()
+      .rename(band)
+  }
+  var coef = ee.Image.cat(
+    [norm('B01'), norm('B02'), norm('B04'), norm('B05'), norm('B06'), norm('B07'), 
+    norm('B08'), norm('B09'), norm('B10'),  norm('B11'), norm('B12'), norm('B13'), 
+    norm('B14'), norm('B3N')]
+  )
+  
+  var cloudCover = ee.Image(ee.Number(image.get('CLOUDCOVER')))
+    .float().multiply(-1).add(100).rename('cloudCover')
+  image = image.subtract(1).multiply(coef)
+  image = image.select(
+    ['B01', 'B02', 'B3N', 'B04', 'B05', 'B10'],
+    ['green', 'red', 'nir', 'swir1', 'swir2', 'thermal'])
+    
+  return image
+    .addBands(cloudCover)
+}
+////END
+
+function addPlotToMap(map){
+    map.addLayer(plot, {}, "Plot");
+    map.centerObject( plot , 15 );
+    map.setControlVisibility(false);
+    return map;
+}
+
+function createL7SliderMap( image, visualization, year, name){
+    var map = ui.Map();
+    addL7Slider(map, year);
+    map.addLayer(image, visualization, name);
+    // Add the plot polygon to the map
+    return addPlotToMap(map);
+}
+
+function createAsterSliderMap( image, visualization, year, name){
+    var map = ui.Map();
+    addAsterSlider(map, year);
+    map.addLayer(image, visualization, name);
+    // Add the plot polygon to the map
+    return addPlotToMap(map);
+}
+
+function createS2SliderMap( image, visualization, year, name){
+    var map = ui.Map();
+    addS2Slider(map, year);
+    map.addLayer(image, visualization, name);
+    // Add the plot polygon to the map
+    return addPlotToMap(map);
+}
+
+function createL8SliderMap( image, visualization, year, name){
+    var map = ui.Map();
+    addL8Slider(map, year);
+    map.addLayer(image, visualization, name);
+    // Add the plot polygon to the map
+    return addPlotToMap(map);
+}
+
+// Create a map for each visualization option.
+var maps = [];
+
+var showLandsat7ForYearTop = function(year){
+  showLandsat7ForYear( landsat7Map, year);
+}
+
+var showAsterForYearBottom = function(year){
+  showAsterForYear( asterMap, year);
+}
+
+var showS2ForYearTop = function(year){
+  showS2ForYear( sentinelMap, year);
+}
+
+var showLandsat8ForYearBottom = function(year){
+  showLandsat8ForYear( landsat8Map, year);
+}
+
+var showAsterForYear = function(map, year){
+  var Aster = ee.ImageCollection( 'ASTER/AST_L1T_003' ).filterBounds(plot).filterDate( year + startYear, year + endYear ).filter(ee.Filter.listContains('ORIGINAL_BANDS_PRESENT', 'B3N')).map(normalize);
+  Aster = Aster.qualityMosaic('cloudCover').visualize(visualizationAster);
+  map.layers().set( 0, Aster);
+}
+
+var showLandsat7ForYear = function(map, year){
+  var landsat = panSharpen('LANDSAT/LE7_L1T_ANNUAL_GREENEST_TOA' , ['B4', 'B5', 'B3'], ['B1', 'B2', 'B3', 'B4', 'B5', 'B6_VCID_1' , 'B6_VCID_2' , 'B7', 'B8'],  year + startYear, year + endYear  );
+  landsat = landsat.visualize(visualizationLandsat );
+  map.layers().set( 0, landsat);
+}
+
+var showLandsat8ForYear = function(map, year){
+  var landsat = panSharpen('LANDSAT/LC8_L1T_ANNUAL_GREENEST_TOA' , ['B5', 'B6', 'B4'], ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8','B10', 'B11'],  year + startYear, year + endYear  );
+  landsat = landsat.visualize(visualizationLandsat8 );
+  map.layers().set( 0, landsat);
+}
+
+var showS2ForYear = function(map, year){
+  var sentinelVV = ee.ImageCollection('COPERNICUS/S2').filterDate(year + startYear, year + endYear).filterBounds(plot).filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', 30) ).map(cloudMask);
+  var sentinelImage = sentinelVV.median().select(['B8','B11','B4']);
+  sentinelImage = sharpenSentinel( sentinelImage);
+  sentinelImage = sentinelImage.visualize(visualizationSentinel);
+  map.layers().set( 0, sentinelImage);
+}
+
+
+var addL7Slider = function(mapWithSlider , selectedYear ){
+  // Create a label and slider.
+  var label = ui.Label('Landsat 7 False Color');
+  var onChangeFunction = showLandsat7ForYearTop;
+  var slider = ui.Slider({
+    min: 2000,
+    max: 2017,
+    step: 1,
+    onChange: onChangeFunction,
+    style: {stretch: 'horizontal'}
+  });
+  
+  // Create a panel that contains both the slider and the label.
+  var panelSlider = ui.Panel({
+    widgets: [label, slider],
+    layout: ui.Panel.Layout.flow('vertical'),
+    style: {
+      position: 'top-center',
+      padding: '7px'
+    }
+  });
+ 
+  mapWithSlider.add(panelSlider);
+  slider.setValue(selectedYear,false);
+}
+
+var addAsterSlider = function(mapWithSlider , selectedYear ){
+  // Create a label and slider.
+  var label = ui.Label('Aster False Color');
+  var onChangeFunction = showAsterForYearBottom;
+  var slider = ui.Slider({
+    min: 2000,
+    max: 2012,
+    step: 1,
+    onChange: onChangeFunction,
+    style: {stretch: 'horizontal'}
+  });
+  
+  // Create a panel that contains both the slider and the label.
+  var panelSlider = ui.Panel({
+    widgets: [label, slider],
+    layout: ui.Panel.Layout.flow('vertical'),
+    style: {
+      position: 'top-center',
+      padding: '7px'
+    }
+  });
+ 
+  mapWithSlider.add(panelSlider);
+  slider.setValue(selectedYear,false);
+}
+
+var addL8Slider = function(mapWithSlider , selectedYear ){
+  // Create a label and slider.
+  var label = ui.Label('Landsat 8 False Color');
+  var onChangeFunction = showLandsat8ForYearBottom;
+  var slider = ui.Slider({
+    min: 2013,
+    max: 2017,
+    step: 1,
+    onChange: onChangeFunction,
+    style: {stretch: 'horizontal'}
+  });
+  
+  // Create a panel that contains both the slider and the label.
+  var panelSlider = ui.Panel({
+    widgets: [label, slider],
+    layout: ui.Panel.Layout.flow('vertical'),
+    style: {
+      position: 'top-center',
+      padding: '7px'
+    }
+  });
+ 
+  mapWithSlider.add(panelSlider);
+  slider.setValue(selectedYear,false);
+}
+
+var addS2Slider = function(mapWithSlider , selectedYear ){
+  // Create a label and slider.
+  var label = ui.Label('Sentinel False Color');
+  var onChangeFunction = showS2ForYearTop;
+  var slider = ui.Slider({
+    min: 2015,
+    max: 2017,
+    step: 1,
+    onChange: onChangeFunction,
+    style: {stretch: 'horizontal'}
+  });
+  
+  // Create a panel that contains both the slider and the label.
+  var panelSlider = ui.Panel({
+    widgets: [label, slider],
+    layout: ui.Panel.Layout.flow('vertical'),
+    style: {
+      position: 'top-center',
+      padding: '7px'
+    }
+  });
+ 
+  mapWithSlider.add(panelSlider);
+  slider.setValue(selectedYear,false);
+}
+
+var sentinelMap = createS2SliderMap( sentinelImage, visualizationSentinel , 2017, "S2 False Color");
+var landsat8Map = createL8SliderMap(sharpenedLandsat8_false, visualizationLandsat8, 2017, "L7 False color");
+var landsat7Map = createL7SliderMap(sharpenedLandsat7_2008, visualizationLandsat, 2008, "L7 False color");
+var asterMap = createAsterSliderMap(sharpenedAster, visualizationAster, 2005, "Aster False color");
+
+maps.push(sentinelMap);
+maps.push(landsat8Map);
+maps.push(landsat7Map);
+maps.push(asterMap);
+
+var linker = ui.Map.Linker(maps);
+// Create a grid of maps.
+
+var panelLeft =  ui.Panel([sentinelMap, landsat8Map], null, {stretch: 'both'});
+var panelRight =  ui.Panel([landsat7Map, asterMap], null, {stretch: 'both'});
+
+var mapGrid = ui.Panel([ panelLeft,panelRight],
+  ui.Panel.Layout.Flow('horizontal'), {stretch: 'both'}
+);
+
+// Enable zooming on the top-left map.
+sentinelMap.setControlVisibility({zoomControl: true});
+
+// Show the scale (e.g. '500m') on the bottom-right map.
+landsat7Map.setControlVisibility({scaleControl: true});
+
+// Add the maps and title to the ui.root.
+ui.root.widgets().reset([mapGrid]);
+ui.root.setLayout(ui.Panel.Layout.Flow('vertical'));
+
+function sharpenSentinel(image){
+	// sharpen see e.g. http://www.cse.psu.edu/~rtc12/CSE486/lecture11_6pp.pdf
+	var log = image
+    .convolve(ee.Kernel.gaussian(10, 7, 'meters')) // G
+    .convolve(ee.Kernel.laplacian8(0.5)) // L of G
+
+	var sharpened = image.subtract(log);
+	return sharpened;
+}
+
+function panSharpen(landsatCollectionName, bandsToSharpen, bandsCloudScore, startPeriod, endPeriod ){
+
+	var bandNames = ee.List(bandsCloudScore);
+
+	// Load a Landsat collection.
+	var image= ee.ImageCollection( landsatCollectionName )
+	// Select the bands of interest to avoid taking up memory.
+	.select(bandsCloudScore)
+	// Filter to get only six months of data.
+	.filterDate( startPeriod , endPeriod ).first();
+
+	image = ee.Image(image );
+
+	// Convert the RGB bands to the HSV color space.
+	var hsv = image.select( bandsToSharpen ).rgbToHsv();
+
+	// Swap in the panchromatic band and convert back to RGB.
+	var sharpened = ee.Image.cat([
+		hsv.select('hue'), hsv.select('saturation'), image.select('B8')
+	]).hsvToRgb();
+
+	return sharpened;
+}
+
+
+function cloudMask(im) {
+  // Opaque and cirrus cloud masks cause bits 10 and 11 in QA60 to be set,
+  // so values less than 1024 are cloud-free
+  var mask = ee.Image(0).where(im.select('QA60').gte(1024), 1).not();
+  return im.updateMask(mask);
+}
+// cloudMask
+
+// Center the map on the plot location (actually the top-left corner of the plot ) and set Zoom level to 15
+Map.setCenter(${placemark.shape[0].longitude}, ${placemark.shape[0].latitude}, 15)
+
+
+
+// This is an automatically generated script. 
+// If you want to Collect Earth to run a different script for your project when a user clicks on a plot on Google Earth follow these steps :
+// 1. Copy the contents of this file : https://raw.githubusercontent.com/openforis/collect-earth/master/collect-earth/collect-earth-app/resources/eePlaygroundScript.fmt
+// 2. Modify the script as you please but keep the lines where the plot variable has been defined using Freemarker tamplate variables
+// 3. Save the script as "eePlaygroundScript.fmt" inside the root folder of your CEP project file
